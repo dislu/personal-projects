@@ -5,7 +5,13 @@ import cv2
 import pytesseract
 from colorthief import ColorThief
 import webcolors
-colors = {'color1':(200, 245, 244),'color2':(249, 244, 167)}
+import pandas as pd
+import enchant
+from os.path import isfile, join
+from gensim.parsing.preprocessing import remove_stopwords
+import numpy as np
+colors = {'color1':(200, 245, 244),'color2':(249, 244, 167),'color3':(186, 167, 242)}
+d = enchant.Dict("en_US")
 def extract_text(file_name):
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"
     image = cv2.imread(file_name,cv2.IMREAD_GRAYSCALE)
@@ -134,29 +140,25 @@ def create_ROIs(file_name,path):
            ROI = image[y:y+h, x:x+w]
            cv2.imwrite('ROI_{}.png'.format(ROI_number), ROI)
 
-def create_folder_form():
-    files = os.listdir(Dir)
+def create_folder_form(Work_Dir):
+    files = os.listdir(Work_Dir)
     #files[0:3]
     count = 1
     for item in form_list:
         count_len = len(str(count))
-        folder = Dir+'\\form'+'0'*(2-count_len)+str(count)
+        folder = Work_Dir+'\\form'+'0'*(2-count_len)+str(count)
         os.makedirs(folder)
         for i in files[item[0]-1:item[1]-1]:
-            source = os.path.join(Dir,i)
+            source = os.path.join(Work_Dir,i)
             dest = os.path.join(folder,i)
             shutil.copy(source,dest)
             count = count + 1
-    folder = Dir+'\\form'+str(count)
+    folder = Work_Dir+'\\form'+str(count)
     os.makedirs(folder)
-    source = os.path.join(Dir,files[len(files)-1])
+    source = os.path.join(Work_Dir,files[len(files)-1])
     dest = os.path.join(folder,files[len(files)-1])
     shutil.copy(source,dest)
-def Process_images():
-    import pytesseract
-from pytesseract import Output
-from PIL import Image
-import pandas as pd
+
 def extract_text(file_name):
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
     image = cv2.imread(file_name,cv2.IMREAD_GRAYSCALE)
@@ -164,15 +166,7 @@ def extract_text(file_name):
     result = 255 - thresh
     data = pytesseract.image_to_string(result, lang='eng',config='--psm 10 ')
     return data
-import pandas as pd
-import enchant
-from os.path import isfile, join
-from gensim.parsing.preprocessing import remove_stopwords
-d = enchant.Dict("en_US")
-columns = ['Domain','Domain_Label','Variable','Variable_Level_value','Annotation Types']
-df = pd.DataFrame(columns = columns)
-data = {'Domain': '', 'Domain_Label': '', 'Variable': '','Variable_Level_value':'','Annotation Types':''}
-df = df.append(data, ignore_index = True)
+
 def X_split(element):
     Y = element.split('.')[0]
     return int(Y.split('_')[1])
@@ -196,67 +190,119 @@ def annotation(text):
          
                
        return results,text
-count =1
-for item in Forms:
-    #print(item)
-    path = [item + '/color1',item + '/color2',item + '/color3']
-    for p in path:
-        data = {'Domain': '', 'Domain_Label': '', 'Variable': '','Variable_Level_value':'','Annotation Types':''}
-        text_list = []
-        print(item)
-        ROI_list = [f for f in os.listdir(p) if f.split('.')[-1]=='png']
-        ROI_list.sort(key = X_split)
-        try:
-           black = ROI_list[-1]
-        except:
+def color_classification(Forms):
+    count =1
+    for item in Forms:
+        if count==1:
+           count=2
            continue 
-        print(black)   
-        file_name = os.path.join(p,black)
-        #text = extract_text(file_name)
-        text = textract(file_name) 
-        if text is None:
-           text = extract_text(file_name)    
-        if text.find('[') !=-1:
-           continue 
-        print(len(text.split('=')))
-        print(text)
-        try:
-           domain = text.split('=')
-           data['Domain'] =domain[0].strip()
-           data['Domain_Label'] = domain[1].strip()
-           text_list.append(text)
-        except:
-           continue 
-        for file in ROI_list[:-1]:
-            file_name = os.path.join(p,file)
+        path1 = item+'\color1'
+        path2 = item+'\color2'
+        path3 = item+'\color3'
+        os.makedirs(path1)
+        os.makedirs(path2)
+        os.makedirs(path3)
+        for file in os.listdir(item):
+            file_name = os.path.join(item,file)
+            print(file_name)
             if file_name.split('.')[-1]=='png':
-               print(file_name)
-               text = textract(file_name)
-               if text is None:
-                  text = extract_text(file_name) 
-               print(text)   
-               if text.find('[') !=-1:
-                  continue  
-               if text not in text_list:
-                  var_list,annot=annotation(text)
-               for i in var_list:
-                   if i.find('=') == -1:
-                      data['Variable']= i.strip()
-                      data['Variable_Level_value']=''
-                      data['Annotation Types']=annot.strip()
-                   else:
-                      print('p',i) 
-                      ii = i.split('=') 
-                      data['Variable']= ii[0].strip()
-                      data['Variable_Level_value']=text.split('=')[1].strip()
-                      data['Annotation Types']=annot.strip()
-                   df = df.append(data, ignore_index = True)           
-                   text_list.append(text)
+               color_thief = ColorThief(file_name)
+               dominant_color = color_thief.get_color(quality=1)
+               D_1 = sum(((np.array(colors['color1'])-np.array(dominant_color))*0.3)**2)
+               D_2 = sum(((np.array(colors['color2'])-np.array(dominant_color))*0.59)**2)
+               D_3 = sum(((np.array(colors['color3'])-np.array(dominant_color))*0.11)**2)
+               if D_1<D_2:
+                  if D_1<D_3:
+                     shutil.copy(file_name,os.path.join(path1,file))   
+                  else:
+                      shutil.copy(file_name,os.path.join(path3,file))
+               else:
+                  if D_2<D_3:
+                      shutil.copy(file_name,os.path.join(path2,file))
+                  else:
+                      shutil.copy(file_name,os.path.join(path3,file))
+
+def create_CSV_table(Forms,df):
+    for item in Forms:
+        #print(item)
+        path = [item + '/color1',item + '/color2',item + '/color3']
+        for p in path:
+            data = {'Domain': '', 'Domain_Label': '', 'Variable': '','Variable_Level_value':'','Annotation Types':''}
+            text_list = []
+            print(item)
+            ROI_list = [f for f in os.listdir(p) if f.split('.')[-1]=='png']
+            ROI_list.sort(key = X_split)
+            try:
+               black = ROI_list[-1]
+            except:
+               continue 
+            print(black)   
+            file_name = os.path.join(p,black)
+            #text = extract_text(file_name)
+            text = textract(file_name) 
+            if text is None:
+               text = extract_text(file_name)    
+            if text.find('[') !=-1:
+               continue 
+            print(len(text.split('=')))
+            print(text)
+            try:
+               domain = text.split('=')
+               data['Domain'] =domain[0].strip()
+               data['Domain_Label'] = domain[1].strip()
+               text_list.append(text)
+            except:
+               continue 
+            for file in ROI_list[:-1]:
+                file_name = os.path.join(p,file)
+                if file_name.split('.')[-1]=='png':
+                   print(file_name)
+                   text = textract(file_name)
+                   if text is None:
+                      text = extract_text(file_name) 
+                   print(text)   
+                   if text.find('[') !=-1:
+                      continue  
+                   if text not in text_list:
+                      var_list,annot=annotation(text)
+                   for i in var_list:
+                       if i.find('=') == -1:
+                          data['Variable']= i.strip()
+                          data['Variable_Level_value']=''
+                          data['Annotation Types']=annot.strip()
+                       else:
+                          print('p',i) 
+                          ii = i.split('=') 
+                          data['Variable']= ii[0].strip()
+                          data['Variable_Level_value']=text.split('=')[1].strip()
+                          data['Annotation Types']=annot.strip()
+                       df = df.append(data, ignore_index = True)           
+                       text_list.append(text)
+    return df
 def main(filepath: str) -> List:
     doc = fitz.open(filepath)
-    form_list = form_list(Doc)    
-
-    return highlights
+    form_list = form_list(Doc)
+    Forms = form_list
+    Work_Dir = os.getcwd()
+    create_folder_form(Work_Dir)
+    count =1
+    for item in Forms:
+        if count==1:
+           count=2
+           continue 
+        print(item)
+        for file in os.listdir(item):
+            file_name = os.path.join(item,file)
+            print(file_name)
+            create_ROIs(file_name,item+'\\')
+    
+    #data = {'Domain': '', 'Domain_Label': '', 'Variable': '','Variable_Level_value':'','Annotation Types':''}
+    #df = df.append(data, ignore_index = True)    
+    columns = ['Domain','Domain_Label','Variable','Variable_Level_value','Annotation Types']
+    df = pd.DataFrame(columns = columns) 
+    table = create_CSV_table(Forms,df)
+    table.to_csv('acrf_2002_26113.csv',index=False)
+    return 
 
 
 if __name__ == "__main__":
